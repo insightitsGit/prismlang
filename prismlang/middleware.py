@@ -47,12 +47,10 @@ def prism_node(agent_id: str, projector: PrismProjector) -> Callable:
             result = fn(state)
 
             text: str = result.get("raw_output", "")
-            if not text:
-                # Node returned nothing useful — emit an empty-category envelope
-                # so the sequence remains contiguous and auditable.
-                text = ""
 
-            slug, vector, rule_chain = projector.project(text)
+            # Empty output: use a sentinel so projection always succeeds and the
+            # sequence stays contiguous and auditable.
+            slug, vector, rule_chain = projector.project(text if text.strip() else "[no output]")
 
             envelope = PrismEnvelope(
                 turn_id=len(state.get("prism_sequence", [])),
@@ -85,8 +83,9 @@ def async_prism_node(agent_id: str, projector: PrismProjector) -> Callable:
 
             text: str = result.get("raw_output", "")
             loop = asyncio.get_event_loop()
+            _text = text if text.strip() else "[no output]"
             slug, vector, rule_chain = await loop.run_in_executor(
-                None, projector.project, text or ""
+                None, projector.project, _text
             )
 
             envelope = PrismEnvelope(
