@@ -201,6 +201,130 @@ print(envelope["rule_chain"])
 
 ---
 
+## Code Examples
+
+> Full examples for every use case are in **[EXAMPLES.md](EXAMPLES.md)**.
+
+### Multi-Node Pipeline
+
+```python
+from prismlang import (
+    Category, TaxonomyConfig, PrismProjector,
+    PrismState, prism_node, BoundaryTranslator, JsonFileCheckpointer,
+)
+from langgraph.graph import StateGraph, END
+
+taxonomy = TaxonomyConfig(categories=[
+    Category("risk",       "Market Risk",  ["risk", "exposure", "volatility"]),
+    Category("portfolio",  "Portfolio",    ["allocation", "rebalance", "weight"]),
+    Category("compliance", "Compliance",   ["regulation", "audit", "kyc"]),
+])
+projector = PrismProjector(taxonomy, tenant_id="acme-finance", k=64)
+
+@prism_node(agent_id="risk_analyst", projector=projector)
+def risk_analyst(state: PrismState) -> dict:
+    return {"raw_output": "Portfolio VaR at 99%: $4.2M. EM exposure elevated."}
+
+@prism_node(agent_id="portfolio_manager", projector=projector)
+def portfolio_manager(state: PrismState) -> dict:
+    prev = state["prism_sequence"][-1]["category_slug"]  # reads previous category
+    return {"raw_output": f"Reducing {prev} exposure. Rotating to investment-grade fixed income."}
+
+@prism_node(agent_id="compliance_officer", projector=projector)
+def compliance_officer(state: PrismState) -> dict:
+    return {"raw_output": "Rebalance approved. SEC 13F disclosure required within 45 days."}
+
+graph = StateGraph(PrismState)
+graph.add_node("risk",       risk_analyst)
+graph.add_node("portfolio",  portfolio_manager)
+graph.add_node("compliance", compliance_officer)
+graph.add_node("exit",       BoundaryTranslator().as_langgraph_node())
+graph.set_entry_point("risk")
+graph.add_edge("risk",      "portfolio")
+graph.add_edge("portfolio", "compliance")
+graph.add_edge("compliance", "exit")
+graph.add_edge("exit", END)
+
+app = graph.compile(checkpointer=JsonFileCheckpointer())
+result = app.invoke(
+    {"tenant_id": "acme-finance", "prism_sequence": [], "raw_output": ""},
+    config={"configurable": {"thread_id": "run-001"}},
+)
+
+for env in result["prism_sequence"]:
+    print(f"[{env['agent_id']:20}] → {env['category_slug']}")
+# [risk_analyst        ] → risk
+# [portfolio_manager   ] → portfolio
+# [compliance_officer  ] → compliance
+```
+
+### Multi-Tenant Isolation
+
+```python
+import numpy as np
+from prismlang import Category, TaxonomyConfig, PrismProjector
+
+taxonomy = TaxonomyConfig(categories=[Category("risk", "Risk", ["risk"])])
+
+proj_a = PrismProjector(taxonomy, tenant_id="hospital-a")
+proj_b = PrismProjector(taxonomy, tenant_id="hospital-b")
+
+text = "Patient shows elevated cardiac risk markers."
+_, vec_a, _ = proj_a.project(text)
+_, vec_b, _ = proj_b.project(text)
+
+print(f"Cross-tenant cosine similarity: {np.dot(vec_a, vec_b):.4f}")  # ~0.15 — near-zero
+print(f"Same-tenant determinism:        {np.dot(vec_a, proj_a.project(text)[1]):.4f}")  # 1.0000
+```
+
+### Async Nodes
+
+```python
+from prismlang import Category, TaxonomyConfig, PrismProjector, PrismState, async_prism_node
+from langgraph.graph import StateGraph, END
+import asyncio
+
+taxonomy = TaxonomyConfig(categories=[Category("analysis", "Analysis", ["data", "insight"])])
+projector = PrismProjector(taxonomy, tenant_id="async-org")
+
+@async_prism_node(agent_id="async_agent", projector=projector)
+async def async_agent(state: PrismState) -> dict:
+    await asyncio.sleep(0)  # your async LLM call here
+    return {"raw_output": "Async analysis complete. Strong upward trend detected."}
+
+graph = StateGraph(PrismState)
+graph.add_node("agent", async_agent)
+graph.set_entry_point("agent")
+graph.set_finish_point("agent")
+
+result = asyncio.run(graph.compile().ainvoke({
+    "tenant_id": "async-org", "prism_sequence": [], "raw_output": ""
+}))
+print(result["prism_sequence"][0]["category_slug"])  # analysis
+```
+
+### Reading the Audit Trail
+
+```python
+from prismlang import Category, TaxonomyConfig, PrismProjector
+
+taxonomy = TaxonomyConfig(categories=[
+    Category("compliance", "Compliance", ["kyc", "aml", "regulation", "audit"]),
+])
+projector = PrismProjector(taxonomy, tenant_id="regulated-bank-001")
+
+slug, vector, rule_chain = projector.project("KYC review flagged three accounts for AML investigation.")
+
+for step in rule_chain:
+    print(step)
+# text -> encoder(all-MiniLM-L6-v2, d=384)
+# category_inference -> slug='compliance'
+# spherical_blend(alpha=0.300) -> v_prime
+# JL_reduction(seed=sha256('regulated-bank-001'), k=64) -> p
+```
+
+---
+
 ## Benchmark Results
 
 > Measured against standard LangGraph text-state across three enterprise domains.  
