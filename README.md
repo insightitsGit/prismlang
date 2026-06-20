@@ -29,19 +29,66 @@ pip install prismlang
 
 ---
 
-## The Problem
+## What Problem Does PrismLang Solve?
 
-Every node in a LangGraph multi-agent pipeline reads **the entire message history** as prompt tokens. By turn 3 of a standard graph, every agent is paying for every prior agent's output — every single call.
+If you are building multi-agent AI systems with LangGraph, you are likely running into one or more of these problems right now:
+
+---
+
+### Problem 1 — You are paying for the same tokens over and over
+
+Every node in a LangGraph pipeline reads **the entire message history** as prompt tokens. Each agent re-reads everything every prior agent wrote — even context it doesn't need.
 
 ```
-Turn 1 →  800 B   1 agent  reading history
-Turn 2 → 1,600 B  2 agents reading history
-Turn 3 → 2,400 B  3 agents reading history    ← you're paying 3× for the same data
+Turn 1 →  800 B   agent A pays for its own output
+Turn 2 → 1,600 B  agent B pays for A + B
+Turn 3 → 2,400 B  agent C pays for A + B + C   ← 3× cost for the same data
+Turn N → N×800 B  cost grows linearly with graph depth
 ```
 
-On top of that:
-- **No audit trail** — you can't trace why an agent classified something the way it did
-- **No tenant isolation** — in multi-tenant SaaS, one misconfigured agent can bleed context across org boundaries
+In a 10-node production graph running thousands of times a day, this is not a rounding error — it is a significant and avoidable infrastructure cost.
+
+**PrismLang fixes this** by replacing growing text history with compact 64-number vectors. Each agent turn costs ~414 bytes regardless of graph depth.
+
+---
+
+### Problem 2 — You have no audit trail for routing decisions
+
+When your pipeline misroutes a request — sends a compliance question to the market-data agent, or a triage case to the wrong specialist — you have no structured record of *why*. You are debugging with logs or nothing.
+
+Regulators in healthcare (HIPAA), finance (SOX, Basel III), and legal (privilege review) are increasingly asking: *show us how your AI made this decision*.
+
+**PrismLang fixes this** by attaching a `rule_chain` to every agent output — a full trace of the encoding, category inference, and projection steps. Every routing decision is reproducible and explainable from first principles.
+
+```python
+envelope["rule_chain"]
+# ['text -> encoder(all-MiniLM-L6-v2, d=384)',
+#  "category_inference -> slug='risk'",
+#  'spherical_blend(alpha=0.300) -> v_prime',
+#  "JL_reduction(seed=sha256('acme-finance'), k=64) -> p"]
+```
+
+---
+
+### Problem 3 — Multi-tenant AI has no safe isolation layer
+
+In SaaS AI platforms, multiple clients share the same agents and graph infrastructure. One misconfigured node, one wrong state key, and Tenant A's reasoning context is visible to Tenant B's inference call.
+
+Text payloads don't enforce isolation — they rely entirely on your application layer getting it right, every time.
+
+**PrismLang fixes this** by making isolation *mathematical*. Each tenant gets a unique Johnson-Lindenstrauss projection matrix derived from `SHA-256(tenant_id)`. The same input text produces geometrically incompatible vectors under different tenant keys. Cross-tenant leakage is provably impossible at the vector level.
+
+---
+
+### Who is PrismLang for?
+
+| If you are building... | PrismLang helps you... |
+|---|---|
+| Multi-agent LangGraph pipelines | Cut token costs 57–62% without changing agent logic |
+| Multi-tenant SaaS AI products | Add cryptographic tenant isolation at the protocol layer |
+| Healthcare or finance AI systems | Produce a full audit trail on every routing decision |
+| AI platforms with compliance requirements | Satisfy regulators with structured, reproducible decision records |
+| Any LangGraph graph with 3+ nodes | Reduce state size linearly — the deeper the graph, the bigger the saving |
 
 ---
 
