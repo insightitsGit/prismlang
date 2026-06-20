@@ -9,9 +9,11 @@
 *Stop paying the token tax on every agent hop. Start routing with math.*
 
 [![PyPI](https://img.shields.io/pypi/v/prismlang?color=06b6d4&label=PyPI&style=flat-square)](https://pypi.org/project/prismlang/)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/prismlang?style=flat-square&color=06b6d4)](https://pypi.org/project/prismlang/)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square)](https://python.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-22c55e?style=flat-square)](LICENSE)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-f97316?style=flat-square)](https://github.com/langchain-ai/langgraph)
+[![CI](https://img.shields.io/github/actions/workflow/status/insightitsGit/prismlang/ci.yml?branch=master&label=CI&style=flat-square)](https://github.com/insightitsGit/prismlang/actions)
 [![Tests](https://img.shields.io/badge/tests-34%20passed-22c55e?style=flat-square)](tests/)
 [![Security](https://img.shields.io/badge/security-hardened-6366f1?style=flat-square)](docs/SECURITY.md)
 
