@@ -1,133 +1,94 @@
+<div align="center">
+
+<img src="https://img.shields.io/badge/PrismLang-v0.1.0-6366f1?style=for-the-badge&labelColor=0f0f23" alt="PrismLang"/>
+
 # PrismLang
 
-**Deterministic Vector Language Protocol for Multi-Agent AI Orchestration**
+### Deterministic Vector Language Protocol for LangGraph Multi-Agent AI
 
-*by Insight IT Solutions LLC — Amin Parva*
+*Stop paying the token tax on every agent hop. Start routing with math.*
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
-[![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange)](https://github.com/langchain-ai/langgraph)
+[![PyPI](https://img.shields.io/pypi/v/prismlang?color=06b6d4&label=PyPI&style=flat-square)](https://pypi.org/project/prismlang/)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square)](https://python.org)
+[![License](https://img.shields.io/badge/license-Apache%202.0-22c55e?style=flat-square)](LICENSE)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-f97316?style=flat-square)](https://github.com/langchain-ai/langgraph)
+[![Tests](https://img.shields.io/badge/tests-34%20passed-22c55e?style=flat-square)](tests/)
+[![Security](https://img.shields.io/badge/security-hardened-6366f1?style=flat-square)](docs/SECURITY.md)
+
+<br/>
+
+**[📖 Docs](https://www.insightits.com/prismlang)** · **[🚀 Quickstart](#quick-start)** · **[📊 Benchmarks](#benchmark-results)** · **[🏢 Insight IT Solutions](https://www.insightits.com)**
+
+<br/>
+
+```
+pip install prismlang
+```
+
+</div>
 
 ---
 
-## What is PrismLang?
+## The Problem
 
-PrismLang is a **middleware protocol** for LangGraph multi-agent systems that replaces growing text-state arrays with deterministic, compressed vector envelopes — without requiring any changes to agent node code.
+Every node in a LangGraph multi-agent pipeline reads **the entire message history** as prompt tokens. By turn 3 of a standard graph, every agent is paying for every prior agent's output — every single call.
 
-Every agent in your graph continues to write and read plain text. PrismLang intercepts at the state boundary, mathematically projects each output into a compact `k`-dimensional vector, and transmits that instead. A single boundary translator node at the graph exit reconstructs human-readable output.
+```
+Turn 1 →  800 B   1 agent  reading history
+Turn 2 → 1,600 B  2 agents reading history
+Turn 3 → 2,400 B  3 agents reading history    ← you're paying 3× for the same data
+```
 
-The result: **inter-agent state that is 40–60% smaller, fully auditable back to its taxonomy rule, and cryptographically isolated per tenant** — with no retraining, no external API, and no changes to your existing agents.
+On top of that:
+- **No audit trail** — you can't trace why an agent classified something the way it did
+- **No tenant isolation** — in multi-tenant SaaS, one misconfigured agent can bleed context across org boundaries
 
 ---
 
-## The Problem PrismLang Solves
+## The Solution
 
-In production multi-agent LangGraph pipelines, the shared state grows with every turn:
+PrismLang replaces growing text payloads with **64-number deterministic vectors** — one per agent turn. A single decorator on your existing nodes. No agent refactoring. No LLM retraining.
 
 ```
-Turn 1 state:  800 bytes   (agent A output)
-Turn 2 state: 1,600 bytes  (agent A + agent B, full text)
-Turn 3 state: 2,400 bytes  (all three agents, full text)
+[Your Agent]  →  "Credit risk elevated in EM bonds."  (text, 400+ tokens)
+                              ↓  @prism_node
+              →  PrismEnvelope { vector[64], slug="risk", rule_chain }  (~414 bytes)
 ```
 
-This creates three compounding problems:
-
-| Problem | Impact |
-|---|---|
-| **State payload bloat** | Every downstream agent re-reads the full history → prompt tokens grow linearly |
-| **No tenant isolation** | Shared state in multi-tenant systems can leak across organisational boundaries |
-| **No auditability** | You cannot trace why an agent said what it said back to a deterministic rule |
-
-PrismLang solves all three at the protocol layer — no LLM retraining, no architecture changes.
+The math guarantees that **the same input always produces the same vector**, that **different tenants produce incompatible vectors**, and that **every routing decision is traceable back to a taxonomy rule**.
 
 ---
 
 ## How It Works
 
+PrismLang applies two equations on every agent output:
+
+**Step 1 — Spherical Blend** *(pulls the embedding toward its category direction)*
 ```
-[Agent A] → text output
-               ↓
-         [ PrismLang Layer ]
-         1. Encode: all-MiniLM-L6-v2 ONNX → 384-d unit vector
-         2. Category: keyword taxonomy → domain slug (e.g. "risk")
-         3. Spherical blend: v' = normalize((1-α)·v + α·‖v‖·eᵢ)
-         4. JL reduction: p = normalize(P·v')  ← P seeded by SHA-256(tenant_id)
-               ↓
-         PrismEnvelope { turn_id, agent_id, category_slug, vector[64], rule_chain }
-               ↓
-[Agent B] ← reads category_slug + prism_sequence (not raw text)
+v' = normalize( (1 − α) · v  +  α · ‖v‖ · eᵢ )
 ```
 
-At the graph boundary, a `BoundaryTranslator` node reconstructs the human-readable report from the envelope sequence and audit chain.
-
-### The Two Core Equations (from the PrismLang paper)
-
-**Spherical Blend (domain-taxonomy enforcement):**
+**Step 2 — JL Reduction** *(compresses to k=64 dims, isolated per tenant)*
 ```
-v' = normalize((1 − α) · v + α · ‖v‖ · eᵢ)
+p = normalize( P · v' )
 ```
 
-**Johnson-Lindenstrauss Reduction (tenant isolation):**
+Where `P` is a `(64 × 384)` Gaussian matrix seeded from `SHA-256(tenant_id)`. A vector stolen from Tenant A is **geometrically meaningless** to any model operating under Tenant B's projection.
+
 ```
-p = normalize(P · v')
-```
-
-Where `P` is a `(k × 384)` Gaussian matrix seeded deterministically from `SHA-256(tenant_id)`. A vector payload from Tenant A is geometrically meaningless to an agent operating under Tenant B's matrix.
-
----
-
-## Benchmark Results
-
-Tested across three enterprise domains against standard LangGraph text state. All results verified with Gemini 2.0 Flash and stored in PostgreSQL.
-
-### Healthcare Domain (ICU multi-agent triage pipeline)
-
-| Metric | Standard LangGraph | PrismLang | Change |
-|---|---|---|---|
-| Prompt tokens (3 turns) | 391 | 148 | **−62.1%** |
-| State at turn 3 | 1,928 B | 960 B | **−50.2%** |
-| LLM latency | 151 ms | 151 ms | 0% |
-| Category flow | — | `clinical → lab → compliance` | ✓ VERIFIED |
-| Audit trail | none | full rule chain | ✓ |
-
-### Finance Domain (Hedge fund risk / portfolio / compliance pipeline)
-
-| Metric | Standard LangGraph | PrismLang | Change |
-|---|---|---|---|
-| Prompt tokens (3 turns) | 407 | 175 | **−57.0%** |
-| State at turn 3 | 1,760 B | 960 B | **−45.5%** |
-| LLM latency | 151 ms | 151 ms | 0% |
-| Category flow | — | `risk → portfolio → compliance` | ✓ VERIFIED |
-
-### Trade Market Domain (Signal / execution / position-risk pipeline)
-
-| Metric | Standard LangGraph | PrismLang | Change |
-|---|---|---|---|
-| Prompt tokens (3 turns) | 435 | 180 | **−58.6%** |
-| State at turn 3 | 1,867 B | 960 B | **−48.6%** |
-| LLM latency | 151 ms | 151 ms | 0% |
-| Category flow | — | `signal → execution → risk` | ✓ VERIFIED |
-
-> **Key finding:** LLM inference cost is unchanged. PrismLang reduces the *state transport layer* — the growing history passed between agents — by 40–62% in prompt tokens, while adding near-zero encoding overhead.
-
----
-
-## Installation
-
-```bash
-pip install prismlang
-```
-
-Or from source:
-```bash
-git clone https://github.com/insightits/prismlang
-cd prismlang
-pip install -e .
-```
-
-**Optional PostgreSQL checkpointer:**
-```bash
-pip install prismlang[postgres]
+                    ┌─────────────────────────────────────────────┐
+                    │           Your LangGraph Graph              │
+                    │                                             │
+  [researcher] ──→ [summarizer] ──→ [reviewer] ──→ [translator]  │
+       │                │               │               │         │
+  @prism_node      @prism_node     @prism_node     (boundary)     │
+       │                │               │               │         │
+  PrismEnvelope    PrismEnvelope   PrismEnvelope   Human text     │
+  {64-d vector}    {64-d vector}   {64-d vector}                  │
+  {rule_chain}     {rule_chain}    {rule_chain}                    │
+                    │                                             │
+                    │  prism_sequence  ─────────  append-only     │
+                    └─────────────────────────────────────────────┘
 ```
 
 ---
@@ -143,89 +104,200 @@ from prismlang import (
 from langgraph.graph import StateGraph, END
 
 # 1. Define your domain taxonomy
-taxonomy = TaxonomyConfig(
-    categories=[
-        Category("risk",       "Risk",       ["risk", "exposure", "volatility"]),
-        Category("market",     "Market",     ["price", "equity", "bond"]),
-        Category("compliance", "Compliance", ["regulation", "audit", "kyc"]),
-    ]
-)
+taxonomy = TaxonomyConfig(categories=[
+    Category("risk",       "Market Risk",   ["risk", "exposure", "volatility"]),
+    Category("market",     "Market Data",   ["price", "equity", "bond"]),
+    Category("compliance", "Compliance",    ["regulation", "audit", "kyc"]),
+])
 
-# 2. Create a tenant-isolated projector
-projector = PrismProjector(taxonomy, tenant_id="my-org-prod", k=64)
+# 2. One projector per tenant — cryptographically isolated
+projector = PrismProjector(taxonomy, tenant_id="acme-finance-prod", k=64)
 
-# 3. Wrap your existing agent nodes — zero changes to agent logic
+# 3. Decorate your existing nodes — zero changes to agent logic
 @prism_node(agent_id="analyst", projector=projector)
 def analyst(state: PrismState) -> dict:
-    # ... your existing LLM call here ...
     return {"raw_output": "Credit risk exposure elevated in EM bonds."}
 
 @prism_node(agent_id="reviewer", projector=projector)
 def reviewer(state: PrismState) -> dict:
-    # Agents can read the category from the previous envelope
-    prev_category = state["prism_sequence"][-1]["category_slug"]
-    return {"raw_output": f"Reviewing {prev_category} findings for compliance."}
+    prev = state["prism_sequence"][-1]["category_slug"]
+    return {"raw_output": f"Reviewing {prev} findings for compliance sign-off."}
 
-# 4. Boundary translator (human-readable output at graph exit)
+# 4. Build and run — exactly like any LangGraph graph
 translator = BoundaryTranslator()
-
-# 5. Build the graph
 graph = StateGraph(PrismState)
 graph.add_node("analyst",    analyst)
 graph.add_node("reviewer",   reviewer)
 graph.add_node("translator", translator.as_langgraph_node())
 graph.set_entry_point("analyst")
-graph.add_edge("analyst",    "reviewer")
-graph.add_edge("reviewer",   "translator")
+graph.add_edge("analyst", "reviewer")
+graph.add_edge("reviewer", "translator")
 graph.add_edge("translator", END)
 
 app = graph.compile(checkpointer=JsonFileCheckpointer())
-
-# 6. Run
 result = app.invoke({
-    "prism_sequence": [],
-    "raw_output": "",
-    "tenant_id": "my-org-prod",
+    "prism_sequence": [], "raw_output": "", "tenant_id": "acme-finance-prod"
 })
-print(result["raw_output"])
+
+# Inspect the audit envelope
+envelope = result["prism_sequence"][0]
+print(envelope["category_slug"])   # "risk"
+print(len(envelope["vector"]))     # 64
+print(envelope["rule_chain"])
+# ['text -> encoder(all-MiniLM-L6-v2, d=384)',
+#  "category_inference -> slug='risk'",
+#  'spherical_blend(alpha=0.300) -> v_prime',
+#  "JL_reduction(seed=sha256('acme-finance-prod'), k=64) -> p"]
 ```
+
+---
+
+## Benchmark Results
+
+> Measured against standard LangGraph text-state across three enterprise domains.  
+> Full methodology in [`docs/BENCHMARK.md`](docs/BENCHMARK.md). Results stored in PostgreSQL.
+
+<table>
+<tr>
+  <th>Domain</th>
+  <th>Metric</th>
+  <th>Standard LangGraph</th>
+  <th>PrismLang</th>
+  <th>Change</th>
+</tr>
+<tr>
+  <td rowspan="2"><b>🏥 Healthcare</b><br/><sub>ICU triage pipeline</sub></td>
+  <td>Prompt tokens (3 turns)</td>
+  <td>391</td>
+  <td>148</td>
+  <td><b>−62.1%</b></td>
+</tr>
+<tr>
+  <td>State size (turn 3)</td>
+  <td>1,928 B</td>
+  <td>960 B</td>
+  <td><b>−50.2%</b></td>
+</tr>
+<tr>
+  <td rowspan="2"><b>💹 Finance</b><br/><sub>Risk / portfolio pipeline</sub></td>
+  <td>Prompt tokens (3 turns)</td>
+  <td>407</td>
+  <td>175</td>
+  <td><b>−57.0%</b></td>
+</tr>
+<tr>
+  <td>State size (turn 3)</td>
+  <td>1,760 B</td>
+  <td>960 B</td>
+  <td><b>−45.5%</b></td>
+</tr>
+<tr>
+  <td rowspan="2"><b>📈 Trade Market</b><br/><sub>Signal / execution pipeline</sub></td>
+  <td>Prompt tokens (3 turns)</td>
+  <td>435</td>
+  <td>180</td>
+  <td><b>−58.6%</b></td>
+</tr>
+<tr>
+  <td>State size (turn 3)</td>
+  <td>1,867 B</td>
+  <td>960 B</td>
+  <td><b>−48.6%</b></td>
+</tr>
+</table>
+
+> **LLM inference latency: unchanged.** PrismLang reduces state transport, not compute.  
+> Encoding overhead per turn: ~31–35 ms CPU-only (no GPU required).
 
 ---
 
 ## Key Properties
 
-| Property | Description |
+| Property | Detail |
 |---|---|
-| **No retraining** | Uses pre-trained ONNX encoder (`all-MiniLM-L6-v2`). No fine-tuning required. |
-| **Deterministic** | Same input + same tenant → identical vector, every time. |
-| **Auditable** | Every vector carries a `rule_chain` tracing the full projection path. |
-| **Tenant-isolated** | SHA-256(tenant_id) seeds the JL matrix. Cross-tenant vectors are geometrically incompatible. |
-| **Model-agnostic** | Works with any LLM (Gemini, Claude, GPT, Llama). Agents call whatever model they want. |
-| **Middleware-only** | Drop `@prism_node` on existing nodes. No agent refactoring. |
+| **Zero agent refactoring** | Agents return `{"raw_output": "..."}` — nothing else changes |
+| **Deterministic** | Same text + same tenant = identical vector, always |
+| **Full audit trail** | Every envelope carries a `rule_chain` tracing the full decision path |
+| **Tenant isolation** | `SHA-256(tenant_id)` seeds the JL matrix — cross-tenant vectors are incompatible |
+| **No GPU** | ONNX Runtime CPU inference — runs on any standard server |
+| **No external API** | Encoder is fully local — no network call per token |
+| **Model-agnostic** | Works with GPT-4, Claude, Gemini, Llama, or any LLM |
+| **Async native** | `@async_prism_node` for async LangGraph nodes |
+| **Two checkpointers** | `JsonFileCheckpointer` (zero deps) + `PostgresCheckpointer` |
 
 ---
 
-## Architecture
+## Installation Options
+
+```bash
+# Core (local JSON checkpointing)
+pip install prismlang
+
+# PostgreSQL checkpointing
+pip install "prismlang[postgres]"
+
+# Async support (asyncpg + aiofiles)
+pip install "prismlang[async-postgres,async-files]"
+
+# Full development environment
+pip install "prismlang[dev]"
+```
+
+---
+
+## Run the Benchmarks
+
+```bash
+git clone https://github.com/insightitsGit/prismlang
+cd prismlang
+pip install -e ".[dev]"
+
+# Runs all 3 domain benchmarks and prints comparison table
+python -m benchmarks.run_all
+```
+
+Requires a running PostgreSQL instance. Set `DATABASE_URL` or use the default:  
+`postgresql://insight_admin:...@localhost/prismLangDB`
+
+---
+
+## Project Structure
 
 ```
-C:\code\PrismLang\
+prismlang/
 ├── prismlang/
-│   ├── encoder.py       # ONNX all-MiniLM-L6-v2 → 384-d unit vector
-│   ├── taxonomy.py      # TaxonomyConfig + Category direction vectors
-│   ├── projector.py     # PrismProjector: spherical blend + JL reduction
-│   ├── envelope.py      # PrismEnvelope TypedDict
-│   ├── state.py         # PrismState (LangGraph channel)
-│   ├── middleware.py    # @prism_node decorator
-│   ├── checkpointer.py  # JsonFileCheckpointer + PostgresCheckpointer
-│   └── translator.py    # BoundaryTranslator
+│   ├── encoder.py        # ONNX all-MiniLM-L6-v2 → 384-d unit vector
+│   ├── taxonomy.py       # TaxonomyConfig + Category direction vectors (eᵢ)
+│   ├── projector.py      # PrismProjector: spherical blend + JL reduction
+│   ├── middleware.py     # @prism_node + @async_prism_node decorators
+│   ├── checkpointer.py   # JsonFile + Postgres + Async variants
+│   ├── exceptions.py     # Typed exception hierarchy (17 classes)
+│   ├── envelope.py       # PrismEnvelope TypedDict
+│   ├── state.py          # PrismState (LangGraph append-only channel)
+│   └── translator.py     # BoundaryTranslator (structural reconstruction)
 ├── benchmarks/
-│   ├── domains/
-│   │   ├── healthcare.py
-│   │   ├── finance.py
-│   │   └── trade_market.py
-│   └── run_all.py
-└── tests/               # 34 unit tests, 0 failures
+│   └── domains/          # Healthcare · Finance · Trade Market
+├── demo/
+│   └── graph.py          # Runnable 3-node LangGraph demo
+├── tests/                # 34 tests · 0 failures
+└── docs/
+    ├── ARCHITECTURE.md
+    ├── BENCHMARK.md
+    └── SECURITY.md
 ```
+
+---
+
+## Security
+
+PrismLang's tenant isolation is a **geometric property** guaranteed by the Johnson-Lindenstrauss lemma — not an access-control system. For production deployments, see [`docs/SECURITY.md`](docs/SECURITY.md) which covers:
+
+- What the JL matrix does and does not protect
+- Overlay encryption for PII in `raw_output`
+- Dependency security notes (onnxruntime, psycopg2, asyncpg)
+- NumPy PRNG stability across version upgrades
+
+To report a vulnerability: **prismrag@insightits.com** — do not open a public GitHub issue.
 
 ---
 
@@ -233,11 +305,12 @@ C:\code\PrismLang\
 
 ```bibtex
 @techreport{parva2026prismlang,
-  title   = {PrismLang: A Deterministic Vector Language Protocol for Multi-Agent AI Orchestration},
-  author  = {Parva, Amin},
-  year    = {2026},
+  title       = {PrismLang: A Deterministic Vector Language Protocol
+                 for Auditable Multi-Agent AI Orchestration},
+  author      = {Parva, Amin},
+  year        = {2026},
   institution = {Insight IT Solutions LLC},
-  email   = {prismrag@insightits.com}
+  url         = {https://www.insightits.com/prismlang}
 }
 ```
 
@@ -245,6 +318,16 @@ C:\code\PrismLang\
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+[Apache 2.0](LICENSE) — free for commercial and personal use.
 
-*Built on PrismRAG by Insight IT Solutions LLC.*
+---
+
+<div align="center">
+
+**Built by [Insight IT Solutions LLC](https://www.insightits.com)**
+
+*Enterprise AI systems · LangGraph architecture · Vector search · Production deployment*
+
+[🌐 Website](https://www.insightits.com) · [📧 Contact](mailto:prismrag@insightits.com) · [🔒 Security](mailto:prismrag@insightits.com)
+
+</div>
