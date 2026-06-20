@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prismlang"
+version = "0.1.0"
+description = "Deterministic vector language protocol for multi-agent AI orchestration"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Amin Parva", email = "prismrag@insightits.com" }]
+maintainers = [{ name = "Amin Parva", email = "prismrag@insightits.com" }]
+keywords = [
+    "langgraph", "multi-agent", "vector", "protocol", "ai", "llm",
+    "state-compression", "deterministic", "onnx", "tenant-isolation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph>=0.2.0",
+    "onnxruntime>=1.17.0",
+    "numpy>=1.26.0",
+    "huggingface-hub>=0.20.0",
+    "tokenizers>=0.15.0",
+    "typing_extensions>=4.9.0",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9.0"]
+async-postgres = ["asyncpg>=0.29.0"]
+async-files = ["aiofiles>=23.0.0"]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.24.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+    "prismlang[postgres,async-postgres,async-files,docs]",
+]
+
+[project.urls]
+Homepage      = "https://www.insightits.com/prismlang"
+Documentation = "https://insightits.github.io/prismlang"
+Repository    = "https://github.com/insightits/prismlang"
+"Bug Tracker" = "https://github.com/insightits/prismlang/issues"
+Paper         = "https://www.insightits.com/prismlang/paper"
+
+[tool.hatch.build.targets.wheel]
+packages = ["prismlang"]
+
+[tool.hatch.build.targets.sdist]
+include = ["prismlang/", "README.md", "LICENSE", "pyproject.toml"]
+
+# ── Ruff (linting + formatting) ─────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "RUF"]
+ignore = ["E501"]
+
+# ── Mypy ────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_ignores = true
+
+# ── Pytest ──────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--tb=short -q"
+
+# ── Coverage ────────────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["prismlang"]
+omit = ["tests/*", "demo/*", "benchmarks/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
