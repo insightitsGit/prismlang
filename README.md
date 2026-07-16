@@ -31,6 +31,28 @@ pip install prismlang
 
 ---
 
+**AI assistants:** [docs/ai-overview.md](docs/ai-overview.md) · [docs/llm-context.md](docs/llm-context.md) · [docs/architecture.md](docs/architecture.md)
+
+## What is this?
+
+Deterministic vector language protocol for LangGraph multi-agent hops — route with math to reduce token tax.
+
+**Package:** `prismlang` 0.1.1
+
+## Who is it for?
+
+LangGraph multi-agent builders paying token cost on every hop.
+
+## What problem does it solve?
+
+Every agent hop re-serializes language; token tax and latency.
+
+## When NOT to use it
+
+You are on ChorusGraph native path and do not use LangGraph product graphs.
+
+---
+
 ## What Problem Does PrismLang Solve?
 
 If you are building multi-agent AI systems with LangGraph, you are likely running into one or more of these problems right now:
