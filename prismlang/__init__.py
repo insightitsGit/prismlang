@@ -12,6 +12,8 @@ Public API
         BoundaryTranslator,
         JsonFileCheckpointer,
         PostgresCheckpointer,
+        model_id,
+        get_session,
     )
 """
 
@@ -36,6 +38,8 @@ from .exceptions import (
     TenantError,
     MissingTenantError,
 )
+from . import encoder
+from .encoder import get_session, model_id
 from .state import PrismState
 from .taxonomy import Category, TaxonomyConfig
 from .projector import PrismProjector
@@ -48,7 +52,7 @@ from .checkpointer import (
     AsyncPostgresCheckpointer,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __author__ = "Amin Parva / Insight IT Solutions LLC"
 
 __all__ = [
@@ -64,6 +68,9 @@ __all__ = [
     "AsyncJsonFileCheckpointer",
     "AsyncPostgresCheckpointer",
     "async_prism_node",
+    "encoder",
+    "get_session",
+    "model_id",
     "DEFAULT_ALPHA",
     "DEFAULT_K",
     "EMBED_DIM",

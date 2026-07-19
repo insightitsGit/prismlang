@@ -2,7 +2,7 @@
 
 > Concise reference for humans and coding assistants.
 > Do not invent APIs beyond this file and the package/repo source.
-> Package: **`prismlang` 0.1.1** · Import: **`prismlang`**
+> Package: **`prismlang` 0.1.2** · Import: **`prismlang`**
 
 ---
 

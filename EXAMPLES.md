@@ -17,6 +17,7 @@
 8. [Custom Taxonomy](#8-custom-taxonomy)
 9. [Boundary Translator](#9-boundary-translator)
 10. [Reading the Audit Trail](#10-reading-the-audit-trail)
+11. [Encoder Artifact Id & Shared Session](#11-encoder-artifact-id--shared-session)
 
 ---
 
@@ -517,6 +518,30 @@ for i, rule in enumerate(rule_chain, 1):
 # Matrix fingerprint — stable identifier for this tenant's projection space
 print(f"\nMatrix fingerprint : {projector.matrix_fingerprint()}")
 print(f"Tenant seed        : {projector._seed}")
+```
+
+---
+
+## 11. Encoder Artifact Id & Shared Session
+
+*New in 0.1.2.* PrismLang keeps exactly one ONNX encoder session per process — `encode`, `encode_batch`, their async variants, and `get_session()` all share the same lazily-initialised singleton. Host processes (e.g. verification layers that compare vectors produced at different times) can stamp stored vectors with `model_id()` and detect encoder-artifact mismatches on read.
+
+```python
+from prismlang import model_id, get_session
+
+# Stable identifier of the loaded model artifact — cached for the process lifetime.
+# Format: "{hf_repo}@{revision}:{sha256(model.onnx)[:12]}"
+print(model_id())
+# sentence-transformers/all-MiniLM-L6-v2@1110a243...:6fd5d72fe458
+
+# The process-wide onnxruntime.InferenceSession (loads the model on first call).
+session = get_session()
+assert session is get_session()   # always the same object — no second model load
+
+# Also available on the submodule:
+from prismlang import encoder
+assert encoder.model_id() == model_id()
+assert encoder.get_session() is session
 ```
 
 ---
