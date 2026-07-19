@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="prismlang",
-    version="0.1.0",
+    version="0.1.2",
     author="Amin Parva",
     author_email="prismrag@insightits.com",
     description="Deterministic vector language protocol for multi-agent AI orchestration",

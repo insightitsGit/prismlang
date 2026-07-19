@@ -7,6 +7,7 @@ Produces 384-d L2-normalised unit vectors — no external API required.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import threading
 from pathlib import Path
@@ -20,10 +21,45 @@ from .exceptions import ModelDownloadError, ModelNotFoundError, TokenizerNotFoun
 _lock = threading.Lock()
 _session = None
 _tokenizer = None
+_model_id: str | None = None
+
+
+def _read_revision(onnx_path: Path) -> str:
+    """Best-effort HuggingFace revision (commit hash) for the downloaded artifact.
+
+    huggingface_hub's ``snapshot_download`` writes per-file metadata under
+    ``<model_dir>/.cache/huggingface/download/<relpath>.metadata`` whose first
+    line is the commit hash. Falls back to ``"local"`` when unavailable
+    (e.g. a manually placed model file).
+    """
+    for parent in onnx_path.parents:
+        meta_root = parent / ".cache" / "huggingface" / "download"
+        if meta_root.is_dir():
+            rel = onnx_path.relative_to(parent)
+            meta = meta_root / (str(rel) + ".metadata")
+            if meta.is_file():
+                try:
+                    first_line = meta.read_text(encoding="utf-8").splitlines()[0].strip()
+                except (OSError, IndexError):
+                    break
+                if first_line:
+                    return first_line
+            break
+    return "local"
+
+
+def _compute_model_id(onnx_path: Path) -> str:
+    """Build the stable artifact id: ``{hf_repo}@{revision}:{sha256(model.onnx)[:12]}``."""
+    sha = hashlib.sha256()
+    with open(onnx_path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            sha.update(chunk)
+    revision = _read_revision(onnx_path)
+    return f"{HF_MODEL_REPO}@{revision}:{sha.hexdigest()[:12]}"
 
 
 def _load() -> None:
-    global _session, _tokenizer
+    global _session, _tokenizer, _model_id
 
     if _session is not None:
         return
@@ -68,12 +104,46 @@ def _load() -> None:
         raise EncoderError(f"Failed to initialise ONNX session: {exc}") from exc
     _tokenizer.enable_padding(pad_id=0, pad_token="[PAD]")
     _tokenizer.enable_truncation(max_length=128)
+    _model_id = _compute_model_id(onnx_path)
 
 
 def _get_session():
     with _lock:
         _load()
     return _session, _tokenizer
+
+
+def get_session():
+    """Return the process-wide ONNX ``InferenceSession``, initialising it if needed.
+
+    prismlang keeps exactly one encoder session per process: ``encode``,
+    ``encode_batch``, their async variants, and this accessor all share the
+    same lazily-initialised singleton. Host processes (e.g. PrismShine,
+    ChorusGraph) can attach to the already-loaded session without triggering
+    a second model load.
+
+    Thread-safe; the first caller pays the one-time model download/load cost.
+    """
+    session, _ = _get_session()
+    return session
+
+
+def model_id() -> str:
+    """Return a stable identifier of the loaded encoder model artifact.
+
+    Format: ``{hf_repo}@{revision}:{sha256(model.onnx)[:12]}`` — e.g.
+    ``sentence-transformers/all-MiniLM-L6-v2@1110a2...:6fd5d72fe458``.
+    Computed once at session initialisation and cached for the lifetime of
+    the process; repeated calls return the identical string. Consumers can
+    persist it alongside stored vectors and compare on read to detect that
+    embeddings were produced by a different model artifact.
+
+    Triggers session initialisation (model download/load) on first call.
+    """
+    with _lock:
+        _load()
+    assert _model_id is not None
+    return _model_id
 
 
 def _mean_pool(token_embeddings: np.ndarray, attention_mask: np.ndarray) -> np.ndarray:

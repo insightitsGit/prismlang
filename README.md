@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/PrismLang-v0.1.0-6366f1?style=for-the-badge&labelColor=0f0f23" alt="PrismLang"/>
+<img src="https://img.shields.io/badge/PrismLang-v0.1.2-6366f1?style=for-the-badge&labelColor=0f0f23" alt="PrismLang"/>
 
 # PrismLang
 
@@ -14,7 +14,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-22c55e?style=flat-square)](LICENSE)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-f97316?style=flat-square)](https://github.com/langchain-ai/langgraph)
 [![CI](https://img.shields.io/github/actions/workflow/status/insightitsGit/prismlang/ci.yml?branch=master&label=CI&style=flat-square)](https://github.com/insightitsGit/prismlang/actions)
-[![Tests](https://img.shields.io/badge/tests-34%20passed-22c55e?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-44%20passed-22c55e?style=flat-square)](tests/)
 [![Security](https://img.shields.io/badge/security-hardened-6366f1?style=flat-square)](docs/SECURITY.md)
 
 <br/>
@@ -37,7 +37,7 @@ pip install prismlang
 
 Deterministic vector language protocol for LangGraph multi-agent hops — route with math to reduce token tax.
 
-**Package:** `prismlang` 0.1.1
+**Package:** `prismlang` 0.1.2
 
 ## Who is it for?
 
@@ -345,6 +345,29 @@ for step in rule_chain:
 # JL_reduction(seed=sha256('regulated-bank-001'), k=64) -> p
 ```
 
+### Encoder Artifact Id & Shared Session
+
+prismlang keeps exactly **one** ONNX encoder session per process — `encode`,
+`encode_batch`, their async variants, and `get_session()` all share the same
+lazily-initialised singleton. Host processes can attach to it without
+triggering a second model load, and can stamp stored vectors with the model
+artifact id to detect encoder mismatches later.
+
+```python
+from prismlang import model_id, get_session
+
+# Stable artifact id: "{hf_repo}@{revision}:{sha256(model.onnx)[:12]}"
+print(model_id())
+# sentence-transformers/all-MiniLM-L6-v2@1110a243...:6fd5d72fe458
+
+# The process-wide onnxruntime.InferenceSession (loads the model on first call)
+session = get_session()
+assert session is get_session()  # always the same object
+```
+
+Both are also available on the submodule: `prismlang.encoder.model_id()` /
+`prismlang.encoder.get_session()`.
+
 ---
 
 ## Benchmark Results
@@ -474,7 +497,7 @@ prismlang/
 │   └── domains/          # Healthcare · Finance · Trade Market
 ├── demo/
 │   └── graph.py          # Runnable 3-node LangGraph demo
-├── tests/                # 34 tests · 0 failures
+├── tests/                # 44 tests · 0 failures
 └── docs/
     ├── ARCHITECTURE.md
     ├── BENCHMARK.md
